@@ -1,0 +1,138 @@
+local Players = game:GetService("Players")
+local Lighting = game:GetService("Lighting")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Workspace = game:GetService("Workspace")
+
+local OWNER_ID = 12345678
+
+local MAX_NIGHTS = 99
+local DAY_LENGTH = 60
+local NIGHT_LENGTH = 60
+local MAX_FIRE_FUEL = 100
+
+local currentNight = Instance.new("IntValue", ReplicatedStorage)
+currentNight.Name = "CurrentNight"
+currentNight.Value = 1
+
+local isNight = Instance.new("BoolValue", ReplicatedStorage)
+isNight.Name = "IsNight"
+isNight.Value = false
+
+local fireFuel = Instance.new("NumberValue", ReplicatedStorage)
+fireFuel.Name = "CampfireFuel"
+fireFuel.Value = 100
+
+local activeMonster = nil
+
+local function spawnMonster()
+	if activeMonster then activeMonster:Destroy() end
+	local template = ReplicatedStorage:FindFirstChild("NightMonster")
+	local spawnPart = Workspace:FindFirstChild("MonsterSpawn")
+	if template and spawnPart then
+		activeMonster = template:Clone()
+		activeMonster:PivotTo(spawnPart.CFrame + Vector3.new(0, 5, 0))
+		activeMonster.Parent = Workspace
+	end
+end
+
+local function despawnMonster()
+	if activeMonster then
+		activeMonster:Destroy()
+		activeMonster = nil
+	end
+end
+
+task.spawn(function()
+	local campfire = Workspace:FindFirstChild("Campfire")
+	local fireEffect = campfire and campfire:FindFirstChildOfClass("Fire")
+	while true do
+		task.wait(1)
+		if fireFuel.Value > 0 then
+			fireFuel.Value = math.max(0, fireFuel.Value - (isNight.Value and 1.2 or 0.5))
+		end
+		if fireEffect then
+			fireEffect.Enabled = fireFuel.Value > 0
+			fireEffect.Size = math.clamp(fireFuel.Value / 5, 2, 20)
+		end
+	end
+end)
+
+local function handleOwnerCommand(player, msg)
+	if player.UserId ~= OWNER_ID then return end
+
+	local args = string.split(msg, " ")
+	local cmd = string.lower(args)
+
+	if cmd == "/setnight" and tonumber(args) then
+		currentNight.Value = math.clamp(tonumber(args), 1, MAX_NIGHTS)
+
+	elseif cmd == "/skip" then
+		isNight.Value = not isNight.Value
+		Lighting.ClockTime = isNight.Value and 0 or 12
+		if isNight.Value then spawnMonster() else despawnMonster() end
+
+	elseif cmd == "/maxfire" then
+		fireFuel.Value = MAX_FIRE_FUEL
+
+	elseif cmd == "/spawnmonster" then
+		spawnMonster()
+
+	elseif cmd == "/killmonster" then
+		despawnMonster()
+
+	elseif cmd == "/god" then
+		local hum = player.Character and player.Character:FindFirstChild("Humanoid")
+		if hum then hum.MaxHealth = math.huge; hum.Health = math.huge end
+
+	elseif cmd == "/speed" and tonumber(args) then
+		local hum = player.Character and player.Character:FindFirstChild("Humanoid")
+		if hum then hum.WalkSpeed = tonumber(args) end
+
+	elseif cmd == "/bring" and args then
+		local targetName = string.lower(args)
+		for _, target in ipairs(Players:GetPlayers()) do
+			if string.find(string.lower(target.Name), targetName) and target.Character and player.Character then
+				target.Character:PivotTo(player.Character:GetPivot() * CFrame.new(0, 0, -4))
+			end
+		end
+
+	elseif cmd == "/kill" and args then
+		local targetName = string.lower(args)
+		for _, target in ipairs(Players:GetPlayers()) do
+			if string.find(string.lower(target.Name), targetName) and target.Character then
+				local hum = target.Character:FindFirstChild("Humanoid")
+				if hum then hum.Health = 0 end
+			end
+		end
+	end
+end
+
+Players.PlayerAdded:Connect(function(player)
+	if player.UserId == OWNER_ID then
+		player.Chatted:Connect(function(msg)
+			handleOwnerCommand(player, msg)
+		end)
+	end
+end)
+
+task.spawn(function()
+	while currentNight.Value <= MAX_NIGHTS do
+		isNight.Value = false
+		Lighting.ClockTime = 12
+		despawnMonster()
+		task.wait(DAY_LENGTH)
+
+		isNight.Value = true
+		Lighting.ClockTime = 0
+		spawnMonster()
+		task.wait(NIGHT_LENGTH)
+
+		if currentNight.Value < MAX_NIGHTS then
+			currentNight.Value += 1
+		else
+			despawnMonster()
+			print("99 NIGHTS SURVIVED!")
+			break
+		end
+	end
+end)
